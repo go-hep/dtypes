@@ -1,6 +1,7 @@
 package dtypes
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"hash/adler32"
@@ -41,19 +42,27 @@ const (
 	idInterface
 	idString
 	idBytes
+
+	idCommonType
+	idArrayType
+	idMapType
+	idSliceType
+	idStructType
+
+	idBuiltins ID = 64
 )
 
 // Type describes a serializable data type description
 type Type interface {
 	ID() ID
-	Type() reflect.Type
+	//Type() reflect.Type
 	Name() string
 	//Descr() []Descr
 
 	setID(id ID)
 }
 
-func TypeOf(v interface{}) Type {
+func New(v interface{}) Type {
 	rt := reflect.TypeOf(v)
 	if rt == nil {
 		return tInterface.Type()
@@ -114,37 +123,85 @@ func setTypeID(typ Type) {
 	idToType[typ.ID()] = typ
 }
 
-type commonType struct {
-	name string
-	id   ID
-	typ  reflect.Type
+type CommonType struct {
+	Xname string
+	Xid   ID
+	//typ  reflect.Type
 }
 
-func (t *commonType) ID() ID {
-	return t.id
+func newCommonType(name string, id ID, rt reflect.Type) CommonType {
+	return CommonType{name, id}
 }
 
-func (t *commonType) setID(id ID) {
-	t.id = id
+func (t *CommonType) ID() ID {
+	return t.Xid
 }
 
-func (t *commonType) Name() string {
-	return t.name
+func (t *CommonType) setID(id ID) {
+	t.Xid = id
 }
 
-func (t *commonType) Type() reflect.Type {
+func (t *CommonType) Name() string {
+	return t.Xname
+}
+
+/*
+func (t *CommonType) Type() reflect.Type {
 	return t.typ
 }
 
+func (t *CommonType) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := newEncoder(buf)
+
+	enc.encode(t.name)
+	enc.encode(t.id)
+
+	return buf.Bytes(), enc.err
+}
+
+func (t *CommonType) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := newDecoder(buf)
+	dec.decode(&t.name)
+	dec.decode(&t.id)
+
+	return dec.err
+}
+*/
+
 // Array type
 type arrayType struct {
-	commonType
+	CommonType
 	Elem ID
 	Len  int
 }
 
+/*
+func (at *arrayType) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := newEncoder(buf)
+
+	enc.encode(at.CommonType)
+	enc.encode(at.Elem)
+	enc.encode(at.Len)
+
+	return buf.Bytes(), enc.err
+}
+
+func (at *arrayType) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := newDecoder(buf)
+	dec.decode(&at.CommonType)
+	dec.decode(&at.Elem)
+	dec.decode(&at.Len)
+
+	return dec.err
+}
+*/
+
 func newArrayType(name string, id ID, rt reflect.Type) *arrayType {
-	return &arrayType{commonType{name, id, rt}, 0, 0}
+	return &arrayType{newCommonType(name, id, rt), 0, 0}
 }
 
 func (a *arrayType) init(elem Type, len int) {
@@ -156,13 +213,36 @@ func (a *arrayType) init(elem Type, len int) {
 
 // Map type
 type mapType struct {
-	commonType
+	CommonType
 	Key  ID
 	Elem ID
 }
 
+/*
+func (mt *mapType) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := newEncoder(buf)
+
+	enc.encode(mt.CommonType)
+	enc.encode(mt.Key)
+	enc.encode(mt.Elem)
+
+	return buf.Bytes(), enc.err
+}
+
+func (mt *mapType) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := newDecoder(buf)
+	dec.decode(&mt.CommonType)
+	dec.decode(&mt.Key)
+	dec.decode(&mt.Elem)
+
+	return dec.err
+}
+*/
+
 func newMapType(name string, id ID, rt reflect.Type) *mapType {
-	return &mapType{commonType{name, id, rt}, 0, 0}
+	return &mapType{newCommonType(name, id, rt), 0, 0}
 }
 
 func (m *mapType) init(k, v Type) {
@@ -174,12 +254,33 @@ func (m *mapType) init(k, v Type) {
 
 // Slice type
 type sliceType struct {
-	commonType
+	CommonType
 	Elem ID
 }
 
+/*
+func (st *sliceType) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := newEncoder(buf)
+
+	enc.encode(st.CommonType)
+	enc.encode(st.Elem)
+
+	return buf.Bytes(), enc.err
+}
+
+func (st *sliceType) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := newDecoder(buf)
+	dec.decode(&st.CommonType)
+	dec.decode(&st.Elem)
+
+	return dec.err
+}
+*/
+
 func newSliceType(name string, id ID, rt reflect.Type) *sliceType {
-	return &sliceType{commonType{name, id, rt}, 0}
+	return &sliceType{newCommonType(name, id, rt), 0}
 }
 
 func (s *sliceType) init(elem Type) {
@@ -189,18 +290,55 @@ func (s *sliceType) init(elem Type) {
 }
 
 type fieldType struct {
-	name string
-	id   ID
+	Name string
+	ID   ID
 }
 
 // Struct type
 type structType struct {
-	commonType
-	fields []fieldType
+	CommonType
+	Fields []fieldType
 }
 
+/*
+func (st *structType) MarshalBinary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	enc := newEncoder(buf)
+
+	enc.encode(st.CommonType)
+	if enc.err != nil {
+		panic(enc.err)
+	}
+	enc.encode(len(st.fields))
+	for i := 0; i < len(st.fields); i++ {
+		ft := &st.fields[i]
+		enc.encode(ft.name)
+		enc.encode(ft.id)
+	}
+
+	return buf.Bytes(), enc.err
+}
+
+func (st *structType) UnmarshalBinary(data []byte) error {
+	buf := bytes.NewReader(data)
+	dec := newDecoder(buf)
+	dec.decode(&st.CommonType)
+	n := 0
+	dec.decode(&n)
+	if n > 0 {
+		st.fields = make([]fieldType, n)
+		for i := 0; i < n; i++ {
+			dec.decode(&st.fields[i].name)
+			dec.decode(&st.fields[i].id)
+		}
+	}
+
+	return dec.err
+}
+*/
+
 func newStructType(name string, id ID, rt reflect.Type) *structType {
-	return &structType{commonType{name, id, rt}, nil}
+	return &structType{newCommonType(name, id, rt), nil}
 }
 
 func (s *structType) init() {
@@ -220,13 +358,6 @@ func newType(rt reflect.Type) (Type, error) {
 
 	name := nameFromType(rt)
 	id := ID(adler32.Checksum([]byte(name)))
-	// dt = Type{
-	// 	ID:    id,
-	// 	Type:  rt,
-	// 	Name:  name,
-	// 	Descr: nil,
-	// }
-	// types[rt] = dt
 
 	// Install the top-level type before the subtypes (e.g. struct before
 	// fields) so recursive types can be constructed safely.
@@ -346,7 +477,7 @@ func newType(rt reflect.Type) (Type, error) {
 			if ft.ID() == 0 {
 				setTypeID(ft)
 			}
-			st.fields = append(st.fields, fieldType{f.Name, ft.ID()})
+			st.Fields = append(st.Fields, fieldType{f.Name, ft.ID()})
 		}
 		return st, nil
 
@@ -403,7 +534,8 @@ var (
 // if the mapping between types and names is not a bijection.
 func Register(value interface{}) {
 
-	dt := TypeOf(value)
+	rt := reflect.TypeOf(value)
+	dt := New(value)
 
 	typesLock.Lock()
 	defer typesLock.Unlock()
@@ -413,7 +545,9 @@ func Register(value interface{}) {
 
 	// TODO(sbinet) check for incompatible duplicates.
 	// The name must refer to the same user type, and vice versa.
-	types[dt.Type()] = dt
+	types[rt] = dt
+
+	gob.Register(value)
 }
 
 // Create and check predefined types
@@ -442,6 +576,12 @@ var (
 	tComplex64  = bootstrapType("complex64", (*complex64)(nil), idComplex64)
 	tComplex128 = bootstrapType("complex128", (*complex128)(nil), idComplex128)
 	tInterface  = bootstrapType("interface", (*interface{})(nil), idInterface)
+
+	tCommonType = bootstrapType("CommonType", (*CommonType)(nil), idCommonType)
+	tArrayType  = bootstrapType("arrayType", (*arrayType)(nil), idArrayType)
+	tMapType    = bootstrapType("mapType", (*mapType)(nil), idMapType)
+	tSliceType  = bootstrapType("sliceType", (*sliceType)(nil), idSliceType)
+	tStructType = bootstrapType("structType", (*structType)(nil), idStructType)
 )
 
 // used for building the basic types; called only from init().
@@ -453,9 +593,11 @@ func bootstrapType(name string, e interface{}, expect ID) ID {
 		panic("bootstrap type already present: " + name + ", " + rt.String())
 	}
 
-	dt := &commonType{name, expect, rt}
-	setTypeID(dt)
-	types[rt] = dt
+	dt := newCommonType(name, expect, rt)
+	setTypeID(&dt)
+	types[rt] = &dt
+
+	gob.Register(reflect.ValueOf(e).Elem())
 	return expect
 }
 
