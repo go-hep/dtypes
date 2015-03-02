@@ -137,5 +137,11 @@ func TestTypeOf(t *testing.T) {
 				table.name, dt.Name(), table.name,
 			)
 		}
+
+		if !reflect.DeepEqual(dt, table.id.Type()) {
+			t.Errorf("name=%q - invalid Type. got=%v want=%v\n",
+				table.name, dt, table.id.Type(),
+			)
+		}
 	}
 }

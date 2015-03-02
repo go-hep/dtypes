@@ -111,12 +111,7 @@ func nameFromType(rt reflect.Type) string {
 }
 
 func setTypeID(typ Type) {
-	// when building recursive types, someone my get there before us.
-	id := typ.ID()
-	if id != 0 {
-		return
-	}
-	idToType[id] = typ
+	idToType[typ.ID()] = typ
 }
 
 type commonType struct {
@@ -459,7 +454,7 @@ func bootstrapType(name string, e interface{}, expect ID) ID {
 	}
 
 	dt := &commonType{name, expect, rt}
-	idToType[dt.ID()] = dt
+	setTypeID(dt)
 	types[rt] = dt
 	return expect
 }
