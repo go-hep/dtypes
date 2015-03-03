@@ -83,13 +83,18 @@ func (k Kind) String() string {
 	panic(fmt.Errorf("dtypes: invalid Kind value (%d)", uint(k)))
 }
 
+// Descr describes a type in terms of builtins
+type Descr struct {
+	Name string
+	ID   ID
+}
+
 // Type describes a serializable data type description
 type Type interface {
 	ID() ID
-	//Type() reflect.Type
 	Name() string
 	Kind() Kind
-	//Descr() []Descr
+	Descr() []Descr
 
 	setID(id ID)
 }
@@ -100,9 +105,12 @@ func TypeFromID(id ID) Type {
 	return id.Type()
 }
 
-// From returns the Type of the value v.
-func From(v interface{}) Type {
-	rt := reflect.TypeOf(v)
+// New returns the Type of the value v.
+func New(v interface{}) Type {
+	rt, err := reflectTypeOf(v)
+	if err != nil {
+		panic(err)
+	}
 	if rt == nil {
 		return tInterface.Type()
 	}
@@ -121,7 +129,7 @@ func From(v interface{}) Type {
 		return dt
 	}
 
-	dt, err := newType(rt)
+	dt, err = newType(rt)
 	if err != nil {
 		panic(err)
 	}
@@ -185,6 +193,10 @@ func (*CommonType) Kind() Kind {
 
 func (t *CommonType) Name() string {
 	return t.Xname
+}
+
+func (t *CommonType) Descr() []Descr {
+	return []Descr{{Name: "", ID: t.Xid}}
 }
 
 // Array type
@@ -251,15 +263,10 @@ func (s *sliceType) init(elem Type) {
 	s.Elem = elem.ID()
 }
 
-type fieldType struct {
-	Name string
-	ID   ID
-}
-
 // Struct type
 type structType struct {
 	CommonType
-	Fields []fieldType
+	Fields []Descr
 }
 
 func newStructType(name string, id ID, rt reflect.Type) *structType {
@@ -268,6 +275,10 @@ func newStructType(name string, id ID, rt reflect.Type) *structType {
 
 func (*structType) Kind() Kind {
 	return Struct
+}
+
+func (st *structType) Descr() []Descr {
+	return st.Fields
 }
 
 func (s *structType) init() {
@@ -406,7 +417,7 @@ func newType(rt reflect.Type) (Type, error) {
 			if ft.ID() == 0 {
 				setTypeID(ft)
 			}
-			st.Fields = append(st.Fields, fieldType{f.Name, ft.ID()})
+			st.Fields = append(st.Fields, Descr{f.Name, ft.ID()})
 		}
 		return st, nil
 
@@ -441,11 +452,6 @@ func isStorable(field *reflect.StructField) bool {
 	return true
 }
 
-type Descr struct {
-	Name string
-	Type Type
-}
-
 var (
 	// Protected by an RWMutex because we read it a lot and write
 	// it only when we see a new type, typically when compiling.
@@ -458,6 +464,9 @@ var (
 // reflectTypeOf
 func reflectTypeOf(value interface{}) (reflect.Type, error) {
 	rt := reflect.TypeOf(value)
+	if rt == nil {
+		return rt, nil
+	}
 	// A type that is just a cycle of pointers (such as type T *T) cannot
 	// be represented in gobs, which need some concrete data.  We use a
 	// cycle detection algorithm from Knuth, Vol 2, Section 3.1, Ex 6,
@@ -499,7 +508,7 @@ func Register(value interface{}) {
 		panic(err)
 	}
 
-	dt := From(reflect.New(rt).Elem().Interface())
+	dt := New(reflect.New(rt).Elem().Interface())
 
 	typesLock.Lock()
 	defer typesLock.Unlock()
