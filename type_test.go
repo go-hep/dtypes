@@ -4,8 +4,15 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
+)
+
+const (
+	idDataTypeI      ID = 3772976347
+	idDataTypeF      ID = 3772779736
+	idDataTypeNested ID = 665194229
 )
 
 type dataTypeI struct {
@@ -14,6 +21,12 @@ type dataTypeI struct {
 
 type dataTypeF struct {
 	F float64
+}
+
+type dataTypeNested struct {
+	I dataTypeI
+	F dataTypeF
+	S string
 }
 
 var dtypes = []struct {
@@ -116,19 +129,24 @@ var dtypes = []struct {
 	},
 	{
 		name: "github.com/go-hep/dtypes.dataTypeI",
-		id:   3772976347,
+		id:   idDataTypeI,
 		v:    dataTypeI{},
 	},
 	{
 		name: "github.com/go-hep/dtypes.dataTypeF",
-		id:   3772779736,
+		id:   idDataTypeF,
 		v:    dataTypeF{},
+	},
+	{
+		name: "github.com/go-hep/dtypes.dataTypeNested",
+		id:   idDataTypeNested,
+		v:    dataTypeNested{},
 	},
 }
 
-func TestTypeOf(t *testing.T) {
+func TestTypeFrom(t *testing.T) {
 	for _, table := range dtypes {
-		dt := New(table.v)
+		dt := From(table.v)
 		if dt.ID() != table.id {
 			t.Errorf("name=%q - invalid ID. got=%d want=%d\n",
 				table.name, dt.ID(), table.id,
@@ -152,7 +170,7 @@ func TestTypeOf(t *testing.T) {
 func TestTypeRW(t *testing.T) {
 	for _, table := range dtypes {
 		fmt.Printf("--- [%s] ---\n", table.name)
-		dt := New(table.v)
+		dt := From(table.v)
 		buf := new(bytes.Buffer)
 		err := gob.NewEncoder(buf).Encode(dt)
 		if err != nil {
@@ -169,5 +187,42 @@ func TestTypeRW(t *testing.T) {
 		if !reflect.DeepEqual(dt, rt.Elem().Interface()) {
 			t.Errorf("name=%q - r/w error. want=%#v got=%#v\n", table.name, dt, rt.Elem().Interface())
 		}
+
+		if !reflect.DeepEqual(dt, rt.Elem().Interface().(Type).ID().Type()) {
+			t.Errorf("name=%q - r/w error. want=%#v got=%#v\n", table.name, dt, rt.Elem().Interface())
+		}
+	}
+}
+
+func TestStructs(t *testing.T) {
+	{
+		v := dataTypeNested{}
+		dt := From(v)
+
+		if !reflect.DeepEqual(dt, idDataTypeNested.Type()) {
+			t.Errorf("want=%#v. got=%#v\n", idDataTypeNested.Type(), dt)
+		}
+
+		if dt.Kind() != Struct {
+			t.Errorf("want=%v. got=%v\n", Struct, dt.Kind())
+		}
+
+		st := dt.(*structType)
+		fmt.Fprintf(os.Stderr, "st=%#v\n", st)
+	}
+	if false {
+		v := &dataTypeNested{}
+		dt := From(v)
+
+		if !reflect.DeepEqual(dt, idDataTypeNested.Type()) {
+			t.Errorf("want=%#v. got=%#v\n", idDataTypeNested.Type(), dt)
+		}
+
+		if dt.Kind() != Struct {
+			t.Errorf("want=%v. got=%v\n", Struct, dt.Kind())
+		}
+
+		st := dt.(*structType)
+		fmt.Fprintf(os.Stderr, "st=%#v\n", st)
 	}
 }

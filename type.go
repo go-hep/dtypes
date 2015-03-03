@@ -52,17 +52,56 @@ const (
 	idBuiltins ID = 64
 )
 
+// A Kind represents the specific kind of type that a Type represents.
+// The zero Kind is not a valid kind.
+type Kind uint
+
+const (
+	Invalid Kind = iota
+	Builtin
+	Array
+	Map
+	Slice
+	Struct
+)
+
+func (k Kind) String() string {
+	switch k {
+	case Invalid:
+		return "Invalid"
+	case Builtin:
+		return "Builtin"
+	case Array:
+		return "Array"
+	case Map:
+		return "Map"
+	case Slice:
+		return "Slice"
+	case Struct:
+		return "Struct"
+	}
+	panic(fmt.Errorf("dtypes: invalid Kind value (%d)", uint(k)))
+}
+
 // Type describes a serializable data type description
 type Type interface {
 	ID() ID
 	//Type() reflect.Type
 	Name() string
+	Kind() Kind
 	//Descr() []Descr
 
 	setID(id ID)
 }
 
-func New(v interface{}) Type {
+// TypeFromID returns the dtypes.Type corresponding to ID.
+// TypeFromID returns nil if no such ID is known to the runtime.
+func TypeFromID(id ID) Type {
+	return id.Type()
+}
+
+// From returns the Type of the value v.
+func From(v interface{}) Type {
 	rt := reflect.TypeOf(v)
 	if rt == nil {
 		return tInterface.Type()
@@ -126,7 +165,6 @@ func setTypeID(typ Type) {
 type CommonType struct {
 	Xname string
 	Xid   ID
-	//typ  reflect.Type
 }
 
 func newCommonType(name string, id ID, rt reflect.Type) CommonType {
@@ -141,34 +179,13 @@ func (t *CommonType) setID(id ID) {
 	t.Xid = id
 }
 
+func (*CommonType) Kind() Kind {
+	return Builtin
+}
+
 func (t *CommonType) Name() string {
 	return t.Xname
 }
-
-/*
-func (t *CommonType) Type() reflect.Type {
-	return t.typ
-}
-
-func (t *CommonType) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := newEncoder(buf)
-
-	enc.encode(t.name)
-	enc.encode(t.id)
-
-	return buf.Bytes(), enc.err
-}
-
-func (t *CommonType) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := newDecoder(buf)
-	dec.decode(&t.name)
-	dec.decode(&t.id)
-
-	return dec.err
-}
-*/
 
 // Array type
 type arrayType struct {
@@ -176,29 +193,6 @@ type arrayType struct {
 	Elem ID
 	Len  int
 }
-
-/*
-func (at *arrayType) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := newEncoder(buf)
-
-	enc.encode(at.CommonType)
-	enc.encode(at.Elem)
-	enc.encode(at.Len)
-
-	return buf.Bytes(), enc.err
-}
-
-func (at *arrayType) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := newDecoder(buf)
-	dec.decode(&at.CommonType)
-	dec.decode(&at.Elem)
-	dec.decode(&at.Len)
-
-	return dec.err
-}
-*/
 
 func newArrayType(name string, id ID, rt reflect.Type) *arrayType {
 	return &arrayType{newCommonType(name, id, rt), 0, 0}
@@ -211,6 +205,10 @@ func (a *arrayType) init(elem Type, len int) {
 	a.Len = len
 }
 
+func (*arrayType) Kind() Kind {
+	return Array
+}
+
 // Map type
 type mapType struct {
 	CommonType
@@ -218,31 +216,12 @@ type mapType struct {
 	Elem ID
 }
 
-/*
-func (mt *mapType) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := newEncoder(buf)
-
-	enc.encode(mt.CommonType)
-	enc.encode(mt.Key)
-	enc.encode(mt.Elem)
-
-	return buf.Bytes(), enc.err
-}
-
-func (mt *mapType) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := newDecoder(buf)
-	dec.decode(&mt.CommonType)
-	dec.decode(&mt.Key)
-	dec.decode(&mt.Elem)
-
-	return dec.err
-}
-*/
-
 func newMapType(name string, id ID, rt reflect.Type) *mapType {
 	return &mapType{newCommonType(name, id, rt), 0, 0}
+}
+
+func (*mapType) Kind() Kind {
+	return Map
 }
 
 func (m *mapType) init(k, v Type) {
@@ -258,29 +237,12 @@ type sliceType struct {
 	Elem ID
 }
 
-/*
-func (st *sliceType) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := newEncoder(buf)
-
-	enc.encode(st.CommonType)
-	enc.encode(st.Elem)
-
-	return buf.Bytes(), enc.err
-}
-
-func (st *sliceType) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := newDecoder(buf)
-	dec.decode(&st.CommonType)
-	dec.decode(&st.Elem)
-
-	return dec.err
-}
-*/
-
 func newSliceType(name string, id ID, rt reflect.Type) *sliceType {
 	return &sliceType{newCommonType(name, id, rt), 0}
+}
+
+func (*sliceType) Kind() Kind {
+	return Slice
 }
 
 func (s *sliceType) init(elem Type) {
@@ -300,45 +262,12 @@ type structType struct {
 	Fields []fieldType
 }
 
-/*
-func (st *structType) MarshalBinary() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	enc := newEncoder(buf)
-
-	enc.encode(st.CommonType)
-	if enc.err != nil {
-		panic(enc.err)
-	}
-	enc.encode(len(st.fields))
-	for i := 0; i < len(st.fields); i++ {
-		ft := &st.fields[i]
-		enc.encode(ft.name)
-		enc.encode(ft.id)
-	}
-
-	return buf.Bytes(), enc.err
-}
-
-func (st *structType) UnmarshalBinary(data []byte) error {
-	buf := bytes.NewReader(data)
-	dec := newDecoder(buf)
-	dec.decode(&st.CommonType)
-	n := 0
-	dec.decode(&n)
-	if n > 0 {
-		st.fields = make([]fieldType, n)
-		for i := 0; i < n; i++ {
-			dec.decode(&st.fields[i].name)
-			dec.decode(&st.fields[i].id)
-		}
-	}
-
-	return dec.err
-}
-*/
-
 func newStructType(name string, id ID, rt reflect.Type) *structType {
 	return &structType{newCommonType(name, id, rt), nil}
+}
+
+func (*structType) Kind() Kind {
+	return Struct
 }
 
 func (s *structType) init() {
@@ -526,6 +455,37 @@ var (
 	idToType = make(map[ID]Type)
 )
 
+// reflectTypeOf
+func reflectTypeOf(value interface{}) (reflect.Type, error) {
+	rt := reflect.TypeOf(value)
+	// A type that is just a cycle of pointers (such as type T *T) cannot
+	// be represented in gobs, which need some concrete data.  We use a
+	// cycle detection algorithm from Knuth, Vol 2, Section 3.1, Ex 6,
+	// pp 539-540.  As we step through indirections, run another type at
+	// half speed. If they meet up, there's a cycle.
+	slowpoke := rt // walks half as fast as rt
+	indir := 0
+	for {
+		pt := rt
+		if pt.Kind() != reflect.Ptr {
+			break
+		}
+		rt = pt.Elem()
+		if rt == slowpoke { // ut.base lapped slowpoke
+			// recursive pointer type.
+			return nil, errors.New(
+				"dtypes: can't represent recursive pointer type " + rt.String(),
+			)
+		}
+		if indir%2 == 0 {
+			slowpoke = slowpoke.Elem()
+		}
+		indir++
+	}
+
+	return rt, nil
+}
+
 // Register records a type, identified by a value for that type, under its
 // internal type name. That name will identify the concrete type of a value
 // sent or received as an interface variable. Only types that will be
@@ -534,8 +494,12 @@ var (
 // if the mapping between types and names is not a bijection.
 func Register(value interface{}) {
 
-	rt := reflect.TypeOf(value)
-	dt := New(value)
+	rt, err := reflectTypeOf(value)
+	if err != nil {
+		panic(err)
+	}
+
+	dt := From(reflect.New(rt).Elem().Interface())
 
 	typesLock.Lock()
 	defer typesLock.Unlock()
