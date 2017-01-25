@@ -1,4 +1,4 @@
-package dtypes
+package dtypes // import "github.com/go-hep/dtypes"
 
 import (
 	"encoding/gob"
